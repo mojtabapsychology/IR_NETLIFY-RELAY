@@ -2,7 +2,8 @@ const express = require("express");
 
 const app = express();
 
-const FALLBACK_PAGE = "https://ir-netlify.github.io/NETLIFY/";
+const FALLBACK_PAGE =
+  "https://ir-netlify.github.io/NETLIFY/";
 
 const BLOCKED_HEADERS = new Set([
   "host",
@@ -20,9 +21,18 @@ const BLOCKED_HEADERS = new Set([
   "x-forwarded-port",
 ]);
 
-app.use(express.raw({ type: "*/*", limit: "50mb" }));
+app.use(
+  express.raw({
+    type: "*/*",
+    limit: "50mb",
+  })
+);
 
-function constructDestUrl(domain, path, query) {
+function constructDestUrl(
+  domain,
+  path,
+  query
+) {
   if (
     domain.startsWith("http://") ||
     domain.startsWith("https://")
@@ -35,24 +45,49 @@ function constructDestUrl(domain, path, query) {
     domain.includes(":443") ||
     /^s\d+\./.test(domain);
 
-  return `${isHttps ? "https://" : "http://"}${domain}${path}${query}`;
+  return `${
+    isHttps
+      ? "https://"
+      : "http://"
+  }${domain}${path}${query}`;
 }
 
-app.all(/.*/, async (req, res) => {
-  try {
-    const destHost = req.headers["x-host"];
+app.use(async (req, res) => {
 
-    // fallback root
-    if (req.path === "/" && !destHost) {
-      const fallback = await fetch(FALLBACK_PAGE);
-      const html = await fallback.text();
+  console.log(
+    req.method,
+    req.path,
+    req.headers["x-host"] ||
+      "NO_X_HOST"
+  );
+
+  try {
+
+    const destHost =
+      req.headers["x-host"];
+
+    // fallback page
+    if (
+      req.path === "/" &&
+      !destHost
+    ) {
+
+      const page =
+        await fetch(
+          FALLBACK_PAGE
+        );
+
+      const html =
+        await page.text();
 
       res.setHeader(
         "content-type",
         "text/html; charset=UTF-8"
       );
 
-      return res.send(html);
+      return res.send(
+        html
+      );
     }
 
     if (!destHost) {
@@ -63,94 +98,161 @@ app.all(/.*/, async (req, res) => {
         );
     }
 
-    const finalUrl = constructDestUrl(
-      destHost,
-      req.path,
+    const query =
       req.url.includes("?")
-        ? "?" + req.url.split("?")[1]
-        : ""
-    );
+        ? "?" +
+          req.url.split(
+            "?"
+          )[1]
+        : "";
+
+    const targetUrl =
+      constructDestUrl(
+        destHost,
+        req.path,
+        query
+      );
 
     const headers = {};
 
-    let clientIp = null;
+    let clientIp =
+      null;
 
-    for (const [key, value] of Object.entries(
+    for (const [
+      key,
+      value,
+    ] of Object.entries(
       req.headers
     )) {
-      const k = key.toLowerCase();
+
+      const k =
+        key.toLowerCase();
 
       if (
-        BLOCKED_HEADERS.has(k) ||
-        k.startsWith("x-nf-") ||
-        k.startsWith("x-netlify-") ||
-        k === "x-host"
+        BLOCKED_HEADERS.has(
+          k
+        ) ||
+        k.startsWith(
+          "x-nf-"
+        ) ||
+        k.startsWith(
+          "x-netlify-"
+        ) ||
+        k ===
+          "x-host"
       ) {
         continue;
       }
 
-      if (k === "x-real-ip") {
-        clientIp = value;
+      if (
+        k ===
+        "x-real-ip"
+      ) {
+        clientIp =
+          value;
         continue;
       }
 
-      if (k === "x-forwarded-for") {
-        if (!clientIp)
-          clientIp = value;
+      if (
+        k ===
+        "x-forwarded-for"
+      ) {
+        if (
+          !clientIp
+        ) {
+          clientIp =
+            value;
+        }
+
         continue;
       }
 
-      headers[k] = value;
+      headers[k] =
+        value;
     }
 
     if (clientIp) {
-      headers["x-forwarded-for"] =
-        clientIp;
+      headers[
+        "x-forwarded-for"
+      ] = clientIp;
     }
 
-    const upstream = await fetch(finalUrl, {
-      method: req.method,
-      headers,
-      redirect: "manual",
-      body:
-        req.method === "GET" ||
-        req.method === "HEAD"
-          ? undefined
-          : req.body,
-    });
+    const upstream =
+      await fetch(
+        targetUrl,
+        {
+          method:
+            req.method,
 
-    res.status(upstream.status);
+          headers,
+
+          redirect:
+            "manual",
+
+          body:
+            req.method ===
+              "GET" ||
+            req.method ===
+              "HEAD"
+              ? undefined
+              : req.body,
+        }
+      );
+
+    res.status(
+      upstream.status
+    );
 
     upstream.headers.forEach(
-      (value, key) => {
+      (
+        value,
+        key
+      ) => {
+
         if (
           key.toLowerCase() !==
           "transfer-encoding"
         ) {
-          res.setHeader(key, value);
+          res.setHeader(
+            key,
+            value
+          );
         }
+
       }
     );
 
-    const buffer = Buffer.from(
-      await upstream.arrayBuffer()
+    const body =
+      Buffer.from(
+        await upstream.arrayBuffer()
+      );
+
+    res.send(body);
+
+  } catch (err) {
+
+    console.error(
+      err
     );
 
-    res.send(buffer);
-
-  } catch (e) {
     res
       .status(502)
       .send(
         "Gateway Error: Connection Failed"
       );
   }
+
 });
 
-const port = process.env.PORT || 10000;
+const port =
+  process.env.PORT ||
+  10000;
 
-app.listen(port, () => {
-  console.log(
-    `Relay running on ${port}`
-  );
-});
+app.listen(
+  port,
+  () => {
+    console.log(
+      `Relay running on ${port}`
+    );
+  }
+);
